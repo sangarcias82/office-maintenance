@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{ title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" href="/static/css/app.css"/>
+    {% block head %}{% endblock %}
+</head>
+<body>
+<div class="shell">
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-kicker">{{ t('brand.kicker') }}</div>
+            <h1 class="brand-title">{{ t('brand.title') }}</h1>
+        </div>
+        <div class="session-card">
+            <div class="lang-switch">
+                <a href="/lang/en?next={{ current_path|urlencode }}" class="{{ 'active' if lang == 'en' else '' }}">EN</a>
+                <a href="/lang/es?next={{ current_path|urlencode }}" class="{{ 'active' if lang == 'es' else '' }}">ES</a>
+            </div>
+            {% if current_user %}
+            <div class="session-meta">
+                {{ current_user.full_name() }} · {{ label('role', current_user.role_code, current_user.role.name) }} · {{ current_user.employee_number }}
+            </div>
+            <div class="access-chip">{{ current_user.access_summary() }}</div>
+            <form action="/logout" method="post">
+                <button class="btn" type="submit">{{ t('nav.logout') }}</button>
+            </form>
+            {% endif %}
+        </div>
+    </header>
+
+    {% if current_user %}
+    <nav class="nav">
+        <a href="/" class="{{ 'active' if current_path == '/' else '' }}">{{ t('nav.home') }}</a>
+        {% if current_user.can_create_request() %}
+        <a href="/requests/new" class="{{ 'active' if current_path.startswith('/requests/new') else '' }}">{{ t('nav.newRequest') }}</a>
+        {% endif %}
+        {% if current_user.can_view_request_list() %}
+        <a href="/requests" class="{{ 'active' if current_path == '/requests' or current_path == '/requests/' else '' }}">{{ t('nav.requestList') }}</a>
+        {% endif %}
+        {% if current_user.can_log_work() %}
+        <a href="/maintenance/new" class="{{ 'active' if current_path.startswith('/maintenance') else '' }}">{{ t('nav.logWork') }}</a>
+        {% endif %}
+        {% if current_user.can_view_reports() %}
+        <a href="/reports" class="{{ 'active' if current_path.startswith('/reports') else '' }}">{{ t('nav.report') }}</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+    {% for flash in flashes %}
+    <div class="flash flash-{{ 'ok' if flash.category == 'ok' else 'error' }}">{{ flash.message }}</div>
+    {% endfor %}
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</div>
+<script src="/static/js/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

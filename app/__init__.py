@@ -1,0 +1,1 @@
+"""Office maintenance web application."""

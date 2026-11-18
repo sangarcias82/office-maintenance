@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <h1>{{ t('request.heading') }}</h1>
+    <p class="lede">{{ t('request.lede') }}</p>
+    <p class="lede">
+        {{ t('request.acting') }}
+        <strong>{{ current_user.full_name() }} ({{ label('role', current_user.role_code, current_user.role.name) }})</strong>.
+        {{ t('request.who') }}
+    </p>
+
+    <form action="/requests" method="post" class="form-grid">
+        <label>
+            <span>{{ t('request.location') }}</span>
+            <select name="location_id" required>
+                <option value="">{{ t('request.selectLocation') }}</option>
+                {% for loc in locations %}
+                <option value="{{ loc.id }}" {% if form and form.location_id == loc.id %}selected{% endif %}>
+                    {{ loc.name }} ({{ loc.code }})
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            <span>{{ t('request.priority') }}</span>
+            <select name="priority_id" required>
+                <option value="">{{ t('request.selectPriority') }}</option>
+                {% for p in priorities %}
+                <option value="{{ p.id }}" {% if form and form.priority_id == p.id %}selected{% endif %}>
+                    {{ label('priority', p.code, p.name) }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            <span>{{ t('request.type') }}</span>
+            <select name="maintenance_type_id" required>
+                <option value="">{{ t('request.selectType') }}</option>
+                {% for mt in maintenance_types %}
+                <option value="{{ mt.id }}" {% if form and form.maintenance_type_id == mt.id %}selected{% endif %}>
+                    {{ label('type', mt.code, mt.name) }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label class="full">
+            <span>{{ t('request.description') }}</span>
+            <textarea name="problem_description" required placeholder="{{ t('request.descriptionPlaceholder') }}">{{ form.problem_description if form else '' }}</textarea>
+        </label>
+
+        <div class="full actions">
+            <button class="btn btn-primary" type="submit">{{ t('request.submit') }}</button>
+            <a class="btn btn-ghost" href="/requests">{{ t('request.cancel') }}</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

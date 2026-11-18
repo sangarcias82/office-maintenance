@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Env & local DB
+.env
+*.db
+*.sqlite3
+
+# Uploads (runtime evidence)
+uploads/*
+!uploads/.gitkeep
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# curl cookie jar from README examples
+jar.txt
+*.cookies

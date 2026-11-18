@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <h1>{{ t('maintenance.heading') }}</h1>
+    <p class="lede">{{ t('maintenance.lede') }}</p>
+
+    <form action="/maintenance" method="post" enctype="multipart/form-data" class="form-grid" id="maintenance-form">
+        <label class="full">
+            <span>{{ t('maintenance.request') }}</span>
+            <select name="request_id" id="request-select" required data-reload-on-change="1">
+                <option value="">{{ t('maintenance.selectTicket') }}</option>
+                {% for r in assigned_requests %}
+                <option value="{{ r.id }}"
+                    {% if selected_request and selected_request.id == r.id %}selected{% endif %}
+                    {% if form and form.request_id == r.id %}selected{% endif %}>
+                    {{ r.ticket_number }} - {{ r.location.name if r.location else '' }} - {{ label('status', r.status.code, r.status.name) }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        {% if selected_request %}
+        <div class="full request-card">
+            <strong>{{ selected_request.ticket_number }}</strong>
+            <div>{{ selected_request.location.name if selected_request.location else '' }}</div>
+            <div class="muted">{{ selected_request.problem_description }}</div>
+            <div class="muted">
+                {{ label('priority', selected_request.priority.code, selected_request.priority.name) }}
+                /
+                {{ label('status', selected_request.status.code, selected_request.status.name) }}
+            </div>
+        </div>
+        {% endif %}
+
+        <label class="full">
+            <span>{{ t('maintenance.work') }}</span>
+            <textarea name="work_performed" required placeholder="{{ t('maintenance.workPlaceholder') }}">{{ form.work_performed if form else '' }}</textarea>
+        </label>
+
+        <label class="full">
+            <span>{{ t('maintenance.notes') }}</span>
+            <textarea name="notes" placeholder="{{ t('maintenance.notesPlaceholder') }}">{{ form.notes if form else '' }}</textarea>
+        </label>
+
+        <label>
+            <span>{{ t('maintenance.status') }}</span>
+            <select name="service_status_id" required>
+                <option value="">{{ t('maintenance.selectStatus') }}</option>
+                {% for s in statuses %}
+                <option value="{{ s.id }}" {% if form and form.service_status_id == s.id %}selected{% endif %}>
+                    {{ label('status', s.code, s.name) }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <div class="full">
+            <h2>{{ t('maintenance.materials') }}</h2>
+            <p class="lede">{{ t('maintenance.materialsHint') }}</p>
+            <div id="material-rows">
+                {% set rows = form.materials if form and form.materials else range(material_rows) %}
+                {% if form and form.materials %}
+                    {% for mat in form.materials %}
+                    <div class="material-row" style="margin-bottom: 0.5rem;">
+                        <input name="material_name" placeholder="{{ t('maintenance.materialName') }}" value="{{ mat.name }}"/>
+                        <input name="material_quantity" type="number" step="0.01" min="0.01" placeholder="{{ t('maintenance.qty') }}" value="{{ mat.quantity }}"/>
+                        <input name="material_unit" placeholder="{{ t('maintenance.unit') }}" value="{{ mat.unit or 'ea' }}"/>
+                        <input name="material_notes" placeholder="{{ t('maintenance.materialNotes') }}" value="{{ mat.notes or '' }}"/>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    {% for _ in range(material_rows) %}
+                    <div class="material-row" style="margin-bottom: 0.5rem;">
+                        <input name="material_name" placeholder="{{ t('maintenance.materialName') }}"/>
+                        <input name="material_quantity" type="number" step="0.01" min="0.01" placeholder="{{ t('maintenance.qty') }}"/>
+                        <input name="material_unit" placeholder="{{ t('maintenance.unit') }}" value="ea"/>
+                        <input name="material_notes" placeholder="{{ t('maintenance.materialNotes') }}"/>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <button type="button" class="btn" id="add-material-row" data-labels='{"name":"{{ t('maintenance.materialName') }}","qty":"{{ t('maintenance.qty') }}","unit":"{{ t('maintenance.unit') }}","notes":"{{ t('maintenance.materialNotes') }}"}'>
+                {{ t('maintenance.addRow') }}
+            </button>
+        </div>
+
+        <div class="full">
+            <h2>{{ t('maintenance.photo') }}</h2>
+            <div class="form-grid">
+                <label class="full">
+                    <span>{{ t('maintenance.attach') }}</span>
+                    <input type="file" name="evidenceFile" accept="image/jpeg,image/png,image/gif,image/webp"/>
+                </label>
+                <label class="full">
+                    <span>{{ t('maintenance.photoDescription') }}</span>
+                    <input name="evidence_description" placeholder="{{ t('maintenance.photoPlaceholder') }}" value="{{ form.evidence_description if form else '' }}"/>
+                </label>
+            </div>
+        </div>
+
+        <div class="full actions">
+            <button class="btn btn-primary" type="submit">{{ t('maintenance.save') }}</button>
+            <a class="btn btn-ghost" href="/requests">{{ t('maintenance.back') }}</a>
+        </div>
+    </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/materials.js"></script>
+{% endblock %}

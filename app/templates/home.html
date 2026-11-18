@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+    <div class="panel" style="margin-bottom: 1rem;">
+        <h1>{{ t('home.heading') }}</h1>
+        <p class="lede">
+            {{ t('home.signedInLead') }}
+            <strong>{{ current_user.full_name() }}</strong>
+            ({{ label('role', current_user.role_code, current_user.role.name) }}).
+            {{ t('home.signedInTail') }}
+        </p>
+    </div>
+
+    <div class="panel access-panel" style="margin-bottom: 1rem;">
+        <h2>{{ t('home.access') }}</h2>
+        {% if current_user.is_employee() %}
+        <ul class="access-list">
+            <li>{{ t('home.employee.new') }}</li>
+            <li>{{ t('home.employee.list') }}</li>
+            <li class="denied">{{ t('home.employee.noLog') }}</li>
+            <li class="denied">{{ t('home.employee.noReport') }}</li>
+        </ul>
+        {% elif current_user.is_technician() %}
+        <ul class="access-list">
+            <li>{{ t('home.technician.list') }}</li>
+            <li>{{ t('home.technician.log') }}</li>
+            <li class="denied">{{ t('home.technician.noNew') }}</li>
+            <li class="denied">{{ t('home.technician.noReport') }}</li>
+        </ul>
+        {% elif current_user.is_area_manager() %}
+        <ul class="access-list">
+            <li>{{ t('home.manager.new') }}</li>
+            <li>{{ t('home.manager.list') }}</li>
+            <li>{{ t('home.manager.report') }}</li>
+            <li class="denied">{{ t('home.manager.noLog') }}</li>
+        </ul>
+        {% endif %}
+    </div>
+
+    <div class="hero-grid">
+        {% if current_user.can_create_request() %}
+        <article class="feature panel">
+            <div>
+                <h2>{{ t('home.register') }}</h2>
+                <p>{{ t('home.registerText') }}</p>
+            </div>
+            <a class="btn btn-primary" href="/requests/new">{{ t('home.openForm') }}</a>
+        </article>
+        {% endif %}
+        {% if current_user.can_view_request_list() %}
+        <article class="feature panel">
+            <div>
+                <h2>{{ t('home.list') }}</h2>
+                {% if current_user.is_employee() %}
+                <p>{{ t('home.listEmployee') }}</p>
+                {% elif current_user.is_technician() %}
+                <p>{{ t('home.listTechnician') }}</p>
+                {% else %}
+                <p>{{ t('home.listManager') }}</p>
+                {% endif %}
+            </div>
+            <a class="btn btn-primary" href="/requests">{{ t('home.viewList') }}</a>
+        </article>
+        {% endif %}
+        {% if current_user.can_log_work() %}
+        <article class="feature panel">
+            <div>
+                <h2>{{ t('home.log') }}</h2>
+                <p>{{ t('home.logText') }}</p>
+            </div>
+            <a class="btn btn-primary" href="/maintenance/new">{{ t('nav.logWork') }}</a>
+        </article>
+        {% endif %}
+        {% if current_user.can_view_reports() %}
+        <article class="feature panel">
+            <div>
+                <h2>{{ t('home.report') }}</h2>
+                <p>{{ t('home.reportText') }}</p>
+            </div>
+            <a class="btn btn-primary" href="/reports">{{ t('home.openReport') }}</a>
+        </article>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
