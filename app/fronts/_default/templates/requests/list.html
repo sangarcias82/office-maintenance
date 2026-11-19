@@ -58,7 +58,7 @@
             <tbody>
             {% for r in requests %}
             <tr>
-                <td>{{ r.ticket_number }}</td>
+                <td><a href="/requests/{{ r.id }}">{{ r.ticket_number }}</a></td>
                 <td>{{ r.reported_at.strftime('%Y-%m-%d %H:%M') if r.reported_at else '' }}</td>
                 <td>{{ r.location.name if r.location else '' }}</td>
                 <td>{{ r.problem_description }}</td>
@@ -73,6 +73,7 @@
                 <td>
                     {% if r.status.code not in ('COMPLETED', 'CANCELLED') %}
                     <form action="/requests/assign" method="post" class="inline-assign">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                         <input type="hidden" name="requestId" value="{{ r.id }}"/>
                         <select name="technicianId" required>
                             <option value="">{{ t('list.chooseTechnician') }}</option>
@@ -91,7 +92,7 @@
                 {% endif %}
                 {% if current_user.is_technician() %}
                 <td>
-                    {% if r.assigned_technician_id == current_user.id and r.status.code != 'CANCELLED' %}
+                    {% if r.assigned_technician_id == current_user.id and not r.status.is_final %}
                     <a class="btn" href="/maintenance/new?requestId={{ r.id }}">{{ t('list.log') }}</a>
                     {% endif %}
                 </td>

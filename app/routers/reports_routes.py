@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.auth import Forbidden, get_lang, require_user
 from app.db import get_db
-from app.deps import render
-from app.i18n import t
+from app.deps import flash, render
+from app.exceptions import BusinessError
+from app.i18n import catalog_label, error_text, t
 from app.models import AppUser
 from app.services import catalog, reports as report_service
 
@@ -30,19 +31,26 @@ def report_page(
     if not user.can_view_reports():
         raise Forbidden(t(get_lang(request), "forbidden"))
 
-    rows_src = report_service.filtered_requests(
-        db,
-        actor=user,
-        from_date=fromDate,
-        to_date=toDate,
-        maintenance_type_id=maintenanceTypeId,
-        location_id=locationId,
-    )
+    lang = get_lang(request)
+    filters = dict(maintenance_type_id=maintenanceTypeId, location_id=locationId)
+    try:
+        rows_src = report_service.filtered_requests(
+            db, actor=user, from_date=fromDate, to_date=toDate, **filters
+        )
+    except BusinessError as exc:
+        # Malformed date in the URL: say so, and run the report without the date filter.
+        flash(request, error_text(lang, exc), "error")
+        fromDate = toDate = None
+        rows_src = report_service.filtered_requests(db, actor=user, **filters)
+
+    def label(kind: str, code: str, fallback: str) -> str:
+        return catalog_label(lang, kind, code, fallback)
+
     indicators = report_service.build_indicators(rows_src)
-    unassigned = t(get_lang(request), "unassigned")
-    detail = report_service.build_report_rows(rows_src, unassigned_label=unassigned)
-    status_labels, status_values = report_service.chart_by_status(rows_src)
-    type_labels, type_values = report_service.chart_by_type(rows_src)
+    unassigned = t(lang, "unassigned")
+    detail = report_service.build_report_rows(rows_src, unassigned_label=unassigned, label=label)
+    status_labels, status_values = report_service.chart_by_status(rows_src, label=label)
+    type_labels, type_values = report_service.chart_by_type(rows_src, label=label)
 
     return render(
         request,
@@ -56,7 +64,8 @@ def report_page(
         maintenance_type_id=maintenanceTypeId,
         location_id=locationId,
         maintenance_types=catalog.list_maintenance_types(db),
-        locations=catalog.list_locations(db),
+        # Include inactive locations: old tickets may still point at them.
+        locations=catalog.list_locations(db, company_id=user.company_id, active_only=False),
         status_chart_labels_json=json.dumps(status_labels),
         status_chart_values_json=json.dumps(status_values),
         type_chart_labels_json=json.dumps(type_labels),

@@ -1,39 +1,43 @@
 #!/usr/bin/env bash
 # Run pytest for Office Maintenance; if green, start uvicorn on :8000.
-# Works when this file sits:
-#   - inside the project root (clone), or
-#   - next to a folder named maintenances/ that contains the app.
-# Usage: ./for_testing
-#        ./for_testing --cov
-#        PYTHON=/path/to/venv/bin/python ./for_testing
+# This file lives OUTSIDE the app, next to the maintenances/ folder:
+#   <repo>/for_testing
+#   <repo>/maintenances/app/main.py
+# Usage: ./for_testing              tests only, then start the app
+#        ./for_testing --cov        tests + coverage report + 90% gate (.coveragerc), then start the app
+#        ./for_testing --e2e        tests, then the end-to-end harness (scripts/e2e_check.py) against a
+#                                   throwaway server + database on :8765, then start the app
+#        ./for_testing --cov --e2e  both (any order)
+#        PYTHON=/path/to/venv/bin/python ./for_testing [--cov] [--e2e]
 if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-if [ -d "$HERE/maintenances" ] && [ -f "$HERE/maintenances/app/main.py" ]; then
-  ROOT="$HERE"
-  APP="$HERE/maintenances"
-elif [ -f "$HERE/app/main.py" ]; then
-  ROOT="$HERE"
-  APP="$HERE"
-else
-  echo "error: cannot find maintenances app (looked for $HERE/maintenances and $HERE/app)" >&2
+APP="$HERE/maintenances"
+if [ ! -f "$APP/app/main.py" ]; then
+  echo "error: cannot find the app at $APP (for_testing must sit next to maintenances/)" >&2
   exit 1
 fi
 
 COVERAGE=""
-case "${1:-}" in
-  "") ;;
-  --cov) COVERAGE=1 ;;
-  *) echo "usage: $0 [--cov]" >&2; exit 2 ;;
-esac
+E2E=""
+for arg in "$@"; do
+  case "$arg" in
+    --cov) COVERAGE=1 ;;
+    --e2e) E2E=1 ;;
+    *) echo "usage: $0 [--cov] [--e2e]" >&2; exit 2 ;;
+  esac
+done
+E2E_PORT="${E2E_PORT:-8765}"
 
 VENV="$APP/venv"
 REQUIREMENTS="$APP/requirements.txt"
 
 has_packages() {
-  "$1" -c "import pytest, uvicorn, fastapi, starlette, httpx, sqlalchemy, jinja2" 2>/dev/null
+  # httpx2 (TestClient transport on starlette 1.x) is only required on Python 3.11+, like requirements.txt
+  "$1" -c "import sys, pytest, pytest_cov, uvicorn, fastapi, starlette, httpx, sqlalchemy, jinja2
+if sys.version_info >= (3, 11): import httpx2" 2>/dev/null
 }
 
 if [ -n "${PYTHON:-}" ]; then
@@ -64,13 +68,33 @@ fi
 echo "Python: $PYTHON"
 echo "App:    $APP"
 
-run() { echo; echo "+ $*"; "$@"; }
-
 if [ -n "$COVERAGE" ]; then
+  # Coverage settings (source, fail_under = 90) live in maintenances/.coveragerc.
   echo; echo "+ cd $APP && $PYTHON -m pytest -q --cov=app --cov-report=term-missing"
   (cd "$APP" && "$PYTHON" -m pytest -q --cov=app --cov-report=term-missing)
 else
-  run "$PYTHON" -m pytest -q "$APP"
+  echo; echo "+ cd $APP && $PYTHON -m pytest -q"
+  (cd "$APP" && "$PYTHON" -m pytest -q)
+fi
+
+if [ -n "$E2E" ]; then
+  # Throwaway server: temp DB + uploads, random secret, production settings otherwise.
+  E2E_DIR="$(mktemp -d)"
+  mkdir -p "$E2E_DIR/uploads"
+  echo; echo "+ e2e: throwaway server on :$E2E_PORT (data in $E2E_DIR)"
+  (cd "$APP" && DATABASE_URL="sqlite:///$E2E_DIR/e2e.db" UPLOAD_DIR="$E2E_DIR/uploads" \
+     SECRET_KEY="$("$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(48))')" \
+     exec "$PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port "$E2E_PORT" >"$E2E_DIR/server.log" 2>&1) &
+  E2E_PID=$!
+  E2E_STATUS=0
+  (cd "$APP" && "$PYTHON" scripts/e2e_check.py --base "http://127.0.0.1:$E2E_PORT" --wait 30) || E2E_STATUS=$?
+  kill "$E2E_PID" 2>/dev/null || true
+  wait "$E2E_PID" 2>/dev/null || true
+  if [ "$E2E_STATUS" -ne 0 ]; then
+    echo "error: end-to-end harness failed (server log: $E2E_DIR/server.log)" >&2
+    exit 1
+  fi
+  rm -rf "$E2E_DIR"
 fi
 
 PIDS=""
@@ -113,7 +137,7 @@ cat <<INFO
 Office Maintenance is running (Ctrl+C stops it):
   App     http://127.0.0.1:8000/
   Health  http://127.0.0.1:8000/api/health
-  Demo    ada.employee@facility.example / OfficeDemo1!
+  Demo    company "Campus Ops" · ada.employee@facility.example / OfficeDemo1!
 INFO
 
 while kill -0 "$APP_PID" 2>/dev/null; do sleep 1; done

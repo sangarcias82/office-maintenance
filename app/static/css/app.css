@@ -1,3 +1,5 @@
+/* Design tokens. Companies override them via company.theme_tokens (app/theme_tokens.py)
+   and front files (app/fronts/<slug>/templates/partials/theme.css). */
 :root {
   --bg: #f3efe6;
   --bg-deep: #e7e0d2;
@@ -7,6 +9,8 @@
   --panel: #fffdf8;
   --accent: #c45c26;
   --accent-ink: #fff8f1;
+  --accent-2: #2f5f8a;
+  --bg-glow: #c45c261f;
   --ok: #2f6b4f;
   --warn: #8a6d3b;
   --danger: #9b2c2c;
@@ -26,7 +30,7 @@ html, body {
   min-height: 100%;
   color: var(--ink);
   background:
-    radial-gradient(circle at top left, rgba(196, 92, 38, 0.12), transparent 28%),
+    radial-gradient(circle at top left, var(--bg-glow), transparent 28%),
     linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
   font-family: var(--font);
 }
@@ -149,6 +153,30 @@ a { color: inherit; }
 
 .login-panel {
   max-width: 520px;
+}
+
+.session-company {
+  margin-bottom: 0.35rem;
+}
+
+.session-company-label,
+.session-company-name {
+  display: block;
+}
+
+.session-company-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.session-company-name {
+  font-family: var(--display);
+  font-size: 1.35rem;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  color: var(--accent);
 }
 
 .session-meta {
@@ -380,7 +408,7 @@ th {
 
 .request-card {
   padding: 1rem;
-  background: #f7f2e8;
+  background: var(--bg);
   border: 1px dashed var(--line);
   border-radius: 14px;
   margin-bottom: 1rem;
@@ -399,7 +427,7 @@ th {
 .access-chip {
   font-size: 0.8rem;
   color: var(--ink);
-  background: #f7f0e4;
+  background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0.35rem 0.7rem;
@@ -424,4 +452,58 @@ th {
   color: var(--muted);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
+}
+
+/* Ticket detail + photo evidence */
+.detail-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+}
+
+.detail-grid dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.detail-grid dd {
+  margin: 0;
+}
+
+.record {
+  border-top: 1px solid var(--line);
+  padding: 0.9rem 0;
+}
+
+.record h3 {
+  font-size: 0.95rem;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.evidence-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.evidence {
+  margin: 0;
+  width: 180px;
+}
+
+.evidence img {
+  display: block;
+  width: 180px;
+  height: 135px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.evidence figcaption {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
 }

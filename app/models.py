@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
+from pathlib import PurePosixPath
 from typing import Optional
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
@@ -14,9 +17,64 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db import Base
+from app.theme_tokens import css_variables, validate_theme_tokens
+
+
+COMPANY_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+COMPANY_SLUG_MAX = 60
+
+
+class Company(Base):
+    """Tenant. The slug is the stable key (planned: session + fronts/<slug> lookup).
+
+    Only generic tenant data lives here. Look and feel comes from front files
+    (app/fronts/<slug>/templates) plus ``theme_tokens``: a generic map of design
+    token -> hex colour (see app/theme_tokens.py). No brand-specific columns.
+    """
+
+    __tablename__ = "company"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(COMPANY_SLUG_MAX), unique=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(255))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    theme_tokens: Mapped[Optional[dict]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    users: Mapped[list[AppUser]] = relationship(back_populates="company")
+
+    @validates("theme_tokens")
+    def _validate_theme_tokens(self, _key: str, value) -> Optional[dict]:
+        clean = validate_theme_tokens(value)
+        return clean or None
+
+    def css_variables(self) -> list[tuple[str, str]]:
+        """(token, hex) pairs to emit as CSS custom properties; re-validated on read."""
+        return css_variables(self.theme_tokens)
+
+    @validates("slug")
+    def _validate_slug(self, _key: str, value: str) -> str:
+        if self.slug is not None and value != self.slug:
+            raise ValueError("Company slug is stable and cannot be changed.")
+        if not isinstance(value, str) or len(value) > COMPANY_SLUG_MAX or not COMPANY_SLUG_RE.match(value):
+            raise ValueError(
+                "Company slug must be lowercase letters/digits separated by single hyphens."
+            )
+        return value
+
+    @validates("display_name")
+    def _validate_display_name(self, _key: str, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("Company display name is required.")
+        return text
 
 
 class Role(Base):
@@ -59,23 +117,80 @@ class MaintenanceType(Base):
     description: Mapped[Optional[str]] = mapped_column(String(255))
 
 
-class AppUser(Base):
-    __tablename__ = "app_user"
+class Account(Base):
+    """A person: one personal email and one password, across companies.
+
+    The same employee can work for several companies: one Account, one AppUser
+    (membership) per company. Password hashes live in AccountCredential.
+    """
+
+    __tablename__ = "user_account"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    employee_number: Mapped[Optional[str]] = mapped_column(String(30), unique=True)
+    email: Mapped[str] = mapped_column(String(180), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    memberships: Mapped[list[AppUser]] = relationship(back_populates="account")
+    credential: Mapped[Optional[AccountCredential]] = relationship(
+        back_populates="account", uselist=False, cascade="all, delete-orphan"
+    )
+
+    @validates("email")
+    def _normalize_email(self, _key: str, value: str) -> str:
+        return (value or "").strip().lower()
+
+
+class AccountCredential(Base):
+    """Password hashes stay off AppUser/Account so templates never see secrets."""
+
+    __tablename__ = "account_credential"
+
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_account.id"), primary_key=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    account: Mapped[Account] = relationship(back_populates="credential")
+
+
+class AppUser(Base):
+    """Membership of a person (Account) in exactly one company.
+
+    Role, employee number, login email and active flag are per company. Login
+    identifiers are unique per company, and a person has at most one membership
+    per company. Requests and records reference AppUser, so data stays scoped.
+    """
+
+    __tablename__ = "app_user"
+    __table_args__ = (
+        UniqueConstraint("company_id", "email", name="uq_app_user_company_email"),
+        UniqueConstraint("company_id", "employee_number", name="uq_app_user_company_employee_number"),
+        UniqueConstraint("company_id", "account_id", name="uq_app_user_company_account"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("company.id"), nullable=False, index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("user_account.id"), nullable=False, index=True)
+    employee_number: Mapped[Optional[str]] = mapped_column(String(30))
     first_name: Mapped[str] = mapped_column(String(120), nullable=False)
     last_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    email: Mapped[str] = mapped_column(String(180), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(180), nullable=False)
     phone: Mapped[Optional[str]] = mapped_column(String(40))
     role_id: Mapped[int] = mapped_column(ForeignKey("role.id"), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
+    company: Mapped[Company] = relationship(back_populates="users")
+    account: Mapped[Account] = relationship(back_populates="memberships")
     role: Mapped[Role] = relationship(back_populates="users")
-    credential: Mapped[Optional[UserCredential]] = relationship(
-        back_populates="user", uselist=False, cascade="all, delete-orphan"
-    )
+
+    @validates("email")
+    def _normalize_email(self, _key: str, value: str) -> str:
+        return (value or "").strip().lower()
 
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
@@ -105,35 +220,14 @@ class AppUser(Base):
     def can_view_reports(self) -> bool:
         return self.is_area_manager()
 
-    def access_summary(self) -> str:
-        if self.is_employee():
-            return "Create requests · Own tickets"
-        if self.is_technician():
-            return "Assigned tickets · Log work"
-        if self.is_area_manager():
-            return "All tickets · Assign · Reports"
-        return self.role_code
-
-
-class UserCredential(Base):
-    """Password hashes stay off AppUser so templates never see secrets."""
-
-    __tablename__ = "user_credential"
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), primary_key=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
-    )
-
-    user: Mapped[AppUser] = relationship(back_populates="credential")
-
 
 class Location(Base):
     __tablename__ = "location"
+    __table_args__ = (UniqueConstraint("company_id", "code", name="uq_location_company_code"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    company_id: Mapped[int] = mapped_column(ForeignKey("company.id"), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(40), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     building: Mapped[Optional[str]] = mapped_column(String(80))
     floor: Mapped[Optional[str]] = mapped_column(String(40))
@@ -143,10 +237,18 @@ class Location(Base):
 
 
 class ServiceRequest(Base):
+    """A ticket. Owned by one company; its location, requester and technician
+    must belong to the same company (enforced in services/requests.py).
+    Maintenance records, materials and photos inherit the company via the request.
+    """
+
     __tablename__ = "service_request"
-    __table_args__ = (UniqueConstraint("ticket_number", name="uq_service_request_ticket"),)
+    __table_args__ = (
+        UniqueConstraint("company_id", "ticket_number", name="uq_service_request_company_ticket"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("company.id"), nullable=False, index=True)
     ticket_number: Mapped[str] = mapped_column(String(30), nullable=False)
     reported_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     location_id: Mapped[int] = mapped_column(ForeignKey("location.id"), nullable=False)
@@ -160,6 +262,7 @@ class ServiceRequest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
+    company: Mapped[Company] = relationship()
     location: Mapped[Location] = relationship()
     priority: Mapped[Priority] = relationship()
     maintenance_type: Mapped[MaintenanceType] = relationship()
@@ -211,8 +314,32 @@ class PhotoEvidence(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     record_id: Mapped[int] = mapped_column(ForeignKey("maintenance_record.id", ondelete="CASCADE"))
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    path_or_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Path relative to settings.upload_dir (e.g. "evidence/1/2/<uuid>-evidence.png").
+    # Never a public URL: files are served by GET /evidence/{id} after an access check.
+    relative_path: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(255))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     record: Mapped[MaintenanceRecord] = relationship(back_populates="photos")
+
+    @validates("relative_path")
+    def _validate_relative_path(self, _key: str, value: str) -> str:
+        path = PurePosixPath(value or "")
+        if not value or path.is_absolute() or "\\" in value or ".." in path.parts:
+            raise ValueError("Evidence path must be relative to the upload folder.")
+        return str(path)
+
+
+class TicketCounter(Base):
+    """Last ticket sequence handed out per company and year.
+
+    Allocation increments this row with one UPDATE inside the request's
+    transaction, so concurrent creates serialize on the row instead of both
+    computing max+1 from the tickets table.
+    """
+
+    __tablename__ = "ticket_counter"
+
+    company_id: Mapped[int] = mapped_column(ForeignKey("company.id"), primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    last_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

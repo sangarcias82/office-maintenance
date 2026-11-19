@@ -4,7 +4,17 @@
     <h1>{{ t('login.heading') }}</h1>
     <p class="lede">{{ t('login.lede') }}</p>
     <form action="/login" method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <input type="hidden" name="next" value="{{ next }}"/>
+        <label class="full">
+            <span>{{ t('login.company') }}</span>
+            <select name="company" required>
+                <option value="">{{ t('login.selectCompany') }}</option>
+                {% for c in companies %}
+                <option value="{{ c.slug }}" {% if company_value == c.slug %}selected{% endif %}>{{ c.display_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
         <label class="full">
             <span>{{ t('login.login') }}</span>
             <input type="text" name="login" required autocomplete="username" autofocus value="{{ login_value or '' }}"/>

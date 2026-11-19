@@ -7,10 +7,11 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import Forbidden, get_lang, require_user
+from app.csrf import require_csrf
 from app.db import get_db
 from app.deps import flash, render
 from app.exceptions import BusinessError
-from app.i18n import t
+from app.i18n import error_text, t
 from app.models import AppUser
 from app.services import catalog, maintenance as maintenance_service, requests as request_service
 
@@ -50,8 +51,8 @@ def new_maintenance_form(
     selected = None
     if requestId:
         try:
-            selected = request_service.require_by_id(db, requestId)
-            if selected.assigned_technician_id != user.id:
+            selected = request_service.require_by_id(db, requestId, company_id=user.company_id)
+            if selected.assigned_technician_id != user.id or selected.status.is_final:
                 selected = None
         except BusinessError:
             selected = None
@@ -67,8 +68,8 @@ def new_maintenance_form(
     )
 
 
-@router.post("")
-@router.post("/")
+@router.post("", dependencies=[Depends(require_csrf)])
+@router.post("/", dependencies=[Depends(require_csrf)])
 def save_maintenance(
     request: Request,
     request_id: int = Form(...),
@@ -100,7 +101,7 @@ def save_maintenance(
         flash(request, t(get_lang(request), "maintenance.saved"), "ok")
         return RedirectResponse("/requests", status_code=303)
     except BusinessError as exc:
-        flash(request, exc.message, "error")
+        flash(request, error_text(get_lang(request), exc), "error")
         assigned = (
             request_service.list_assignable_for_technician(db, user)
             if user.is_technician()
@@ -108,7 +109,9 @@ def save_maintenance(
         )
         selected = None
         try:
-            selected = request_service.require_by_id(db, request_id)
+            selected = request_service.require_by_id(db, request_id, company_id=user.company_id)
+            if selected.assigned_technician_id != user.id:
+                selected = None
         except BusinessError:
             selected = None
         return render(

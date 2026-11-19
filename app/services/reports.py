@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Optional
@@ -9,6 +10,14 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.exceptions import BusinessError
 from app.models import AppUser, Location, MaintenanceRecord, MaintenanceType, ServiceRequest
+
+
+# label(kind, code, fallback) -> display text; routes pass the locale-aware i18n label.
+LabelFn = Callable[[str, str, str], str]
+
+
+def _db_name(_kind: str, _code: str, fallback: str) -> str:
+    return fallback
 
 
 @dataclass
@@ -32,18 +41,24 @@ class ReportRow:
     status_code: str
 
 
-def _parse_day_start(value: Optional[str]) -> Optional[datetime]:
-    if not value:
+def parse_filter_date(value: Optional[str]) -> Optional[date]:
+    """Parse a YYYY-MM-DD filter value; blank means no filter."""
+    if not value or not value.strip():
         return None
-    d = date.fromisoformat(value)
-    return datetime.combine(d, time.min)
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        raise BusinessError("Dates must use the YYYY-MM-DD format.", "error.invalidDate") from None
+
+
+def _parse_day_start(value: Optional[str]) -> Optional[datetime]:
+    d = parse_filter_date(value)
+    return datetime.combine(d, time.min) if d else None
 
 
 def _parse_day_end(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    d = date.fromisoformat(value)
-    return datetime.combine(d, time.max)
+    d = parse_filter_date(value)
+    return datetime.combine(d, time.max) if d else None
 
 
 def filtered_requests(
@@ -58,6 +73,8 @@ def filtered_requests(
     if not actor.can_view_reports():
         raise BusinessError("Only area managers can view reports.", "error.onlyManagersReport")
 
+    start = _parse_day_start(from_date)  # raises BusinessError(error.invalidDate) on bad input
+    end = _parse_day_end(to_date)
     stmt = (
         select(ServiceRequest)
         .options(
@@ -68,10 +85,9 @@ def filtered_requests(
             joinedload(ServiceRequest.assigned_technician),
             joinedload(ServiceRequest.records),
         )
+        .where(ServiceRequest.company_id == actor.company_id)
         .order_by(ServiceRequest.reported_at.desc())
     )
-    start = _parse_day_start(from_date)
-    end = _parse_day_end(to_date)
     if start:
         stmt = stmt.where(ServiceRequest.reported_at >= start)
     if end:
@@ -104,7 +120,11 @@ def build_indicators(rows: list[ServiceRequest]) -> Indicators:
     )
 
 
-def build_report_rows(rows: list[ServiceRequest], unassigned_label: str = "Unassigned") -> list[ReportRow]:
+def build_report_rows(
+    rows: list[ServiceRequest],
+    unassigned_label: str = "Unassigned",
+    label: LabelFn = _db_name,
+) -> list[ReportRow]:
     out: list[ReportRow] = []
     for r in rows:
         latest = None
@@ -118,33 +138,42 @@ def build_report_rows(rows: list[ServiceRequest], unassigned_label: str = "Unass
                 technician=tech,
                 reported_at=r.reported_at,
                 attended_at=latest.attended_at if latest else None,
-                maintenance_type=r.maintenance_type.name if r.maintenance_type else "",
-                status=r.status.name if r.status else "",
+                maintenance_type=(
+                    label("type", r.maintenance_type.code, r.maintenance_type.name)
+                    if r.maintenance_type
+                    else ""
+                ),
+                status=label("status", r.status.code, r.status.name) if r.status else "",
                 status_code=r.status.code if r.status else "",
             )
         )
     return out
 
 
-def chart_by_status(rows: list[ServiceRequest]) -> tuple[list[str], list[int]]:
+def chart_by_status(rows: list[ServiceRequest], label: LabelFn = _db_name) -> tuple[list[str], list[int]]:
     counts: dict[str, int] = {}
     for r in rows:
-        label = r.status.name
-        counts[label] = counts.get(label, 0) + 1
+        text = label("status", r.status.code, r.status.name)
+        counts[text] = counts.get(text, 0) + 1
     labels = list(counts.keys())
     values = [counts[k] for k in labels]
     return labels, values
 
 
-def chart_by_type(rows: list[ServiceRequest]) -> tuple[list[str], list[int]]:
+def chart_by_type(rows: list[ServiceRequest], label: LabelFn = _db_name) -> tuple[list[str], list[int]]:
     counts: dict[str, int] = {}
     for r in rows:
-        label = r.maintenance_type.name
-        counts[label] = counts.get(label, 0) + 1
+        text = label("type", r.maintenance_type.code, r.maintenance_type.name)
+        counts[text] = counts.get(text, 0) + 1
     labels = list(counts.keys())
     values = [counts[k] for k in labels]
     return labels, values
 
 
-def count_all(db: Session) -> int:
-    return db.scalar(select(func.count()).select_from(ServiceRequest)) or 0
+def count_all(db: Session, *, company_id: int) -> int:
+    return (
+        db.scalar(
+            select(func.count()).select_from(ServiceRequest).where(ServiceRequest.company_id == company_id)
+        )
+        or 0
+    )

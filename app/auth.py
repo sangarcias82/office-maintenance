@@ -1,4 +1,4 @@
-"""Session auth helpers. Password hashes live in user_credential, not AppUser."""
+"""Session auth helpers. Password hashes live in account_credential (per person), not AppUser."""
 
 from __future__ import annotations
 
@@ -6,20 +6,22 @@ import base64
 import hashlib
 import hmac
 import secrets
+from functools import lru_cache
 from typing import Optional
 
 from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import get_settings
 from app.db import get_db
-from app.models import AppUser, UserCredential
+from app.models import AccountCredential, AppUser, Company
+from app.services import companies as company_service
 
 SESSION_USER_KEY = "user_id"
 SESSION_LANG_KEY = "lang"
 
 _PBKDF2_ALGO = "pbkdf2_sha256"
-_PBKDF2_ITERATIONS = 600_000
 _SALT_BYTES = 16
 _DKLEN = 32
 
@@ -38,12 +40,11 @@ def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
 
-def hash_password(password: str) -> str:
+def hash_password(password: str, iterations: Optional[int] = None) -> str:
+    rounds = iterations or get_settings().password_hash_iterations
     salt = secrets.token_bytes(_SALT_BYTES)
-    digest = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), salt, _PBKDF2_ITERATIONS, dklen=_DKLEN
-    )
-    return f"{_PBKDF2_ALGO}${_PBKDF2_ITERATIONS}${_b64(salt)}${_b64(digest)}"
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds, dklen=_DKLEN)
+    return f"{_PBKDF2_ALGO}${rounds}${_b64(salt)}${_b64(digest)}"
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
@@ -65,49 +66,71 @@ def verify_password(password: str, stored_hash: str) -> bool:
     return hmac.compare_digest(candidate, expected)
 
 
-_DUMMY_HASH = hash_password(secrets.token_hex(16))
+@lru_cache(maxsize=4)
+def _dummy_hash_for(iterations: int) -> str:
+    return hash_password(secrets.token_hex(16), iterations)
 
 
-def find_active_credentials_by_login(db: Session, login: str) -> Optional[UserCredential]:
+def dummy_hash() -> str:
+    """Hash verified when no user matches, at the same cost as real hashes."""
+    return _dummy_hash_for(get_settings().password_hash_iterations)
+
+
+def find_active_membership(db: Session, company_id: int, login: str) -> Optional[AppUser]:
+    """Active membership of ``company_id`` by login email, else employee number.
+
+    Lookups never leave the company: identifiers are only unique per company.
+    """
     key = login.strip()
     if not key:
         return None
-    cred = db.scalar(
-        select(UserCredential)
-        .join(AppUser, UserCredential.user_id == AppUser.id)
-        .options(joinedload(UserCredential.user).joinedload(AppUser.role))
-        .where(AppUser.active.is_(True))
-        .where(AppUser.email == key.lower())
+    base = (
+        select(AppUser)
+        .options(joinedload(AppUser.role), joinedload(AppUser.company))
+        .where(AppUser.active.is_(True), AppUser.company_id == company_id)
     )
-    if cred is not None:
-        return cred
+    user = db.scalar(base.where(AppUser.email == key.lower()))
+    if user is not None:
+        return user
+    return db.scalar(base.where(AppUser.employee_number == key))
+
+
+def _password_hash_of(db: Session, user: AppUser) -> Optional[str]:
     return db.scalar(
-        select(UserCredential)
-        .join(AppUser, UserCredential.user_id == AppUser.id)
-        .options(joinedload(UserCredential.user).joinedload(AppUser.role))
-        .where(AppUser.active.is_(True))
-        .where(AppUser.employee_number == key)
+        select(AccountCredential.password_hash).where(AccountCredential.account_id == user.account_id)
     )
 
 
-def authenticate(db: Session, login: str, password: str) -> Optional[AppUser]:
-    """Return the view-facing user on success. Same failure for unknown/bad password."""
+def authenticate(db: Session, company_slug: str, login: str, password: str) -> Optional[AppUser]:
+    """Return the company membership on success.
+
+    The password belongs to the person (Account), so one employee working for
+    two companies signs in to either with the same email and password; the
+    chosen company decides which membership (role, data) the session gets.
+
+    Unknown/inactive company, unknown user, and bad password all fail the same way,
+    and all run one PBKDF2 verification so timing does not reveal which one it was.
+    """
     if not login or not login.strip() or password is None or password == "":
         return None
-    creds = find_active_credentials_by_login(db, login)
-    if creds is None:
-        verify_password(password, _DUMMY_HASH)
+    company = company_service.get_active_by_slug(db, company_slug)
+    user = find_active_membership(db, company.id, login) if company else None
+    stored = _password_hash_of(db, user) if user else None
+    if stored is None:
+        verify_password(password, dummy_hash())
         return None
-    if not verify_password(password, creds.password_hash):
+    if not verify_password(password, stored):
         return None
-    return creds.user
+    return user
 
 
 def get_user_by_id(db: Session, user_id: int) -> Optional[AppUser]:
+    """Active user of an active company (deactivating a company ends its sessions)."""
     return db.scalar(
         select(AppUser)
-        .options(joinedload(AppUser.role))
-        .where(AppUser.id == user_id, AppUser.active.is_(True))
+        .join(Company, AppUser.company_id == Company.id)
+        .options(joinedload(AppUser.role), joinedload(AppUser.company))
+        .where(AppUser.id == user_id, AppUser.active.is_(True), Company.active.is_(True))
     )
 
 
@@ -126,11 +149,22 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> AppUser:
 
 
 def set_session_user(request: Request, user: AppUser) -> None:
+    """Start a fresh session for ``user``.
+
+    Sessions are signed cookies (no server-side id to rotate), so rotation means
+    dropping everything from before login and writing a new payload. Only the UI
+    language picked on the login page is carried over.
+    """
+    lang = request.session.get(SESSION_LANG_KEY)
+    request.session.clear()
+    if lang in ("en", "es"):
+        request.session[SESSION_LANG_KEY] = lang
     request.session[SESSION_USER_KEY] = user.id
 
 
-def clear_session_user(request: Request) -> None:
-    request.session.pop(SESSION_USER_KEY, None)
+def clear_session(request: Request) -> None:
+    """Logout: drop the whole session (user, language, flashes, anything else)."""
+    request.session.clear()
 
 
 def get_lang(request: Request) -> str:

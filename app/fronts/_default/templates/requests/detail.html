@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" style="margin-bottom: 1rem;">
+    <p class="muted"><a href="/requests">&larr; {{ t('detail.back') }}</a></p>
+    <h1>{{ ticket.ticket_number }}</h1>
+    <p class="lede">{{ ticket.problem_description }}</p>
+    <dl class="detail-grid">
+        <dt>{{ t('list.status') }}</dt>
+        <dd><span class="badge badge-{{ ticket.status.code }}">{{ label('status', ticket.status.code, ticket.status.name) }}</span></dd>
+        <dt>{{ t('list.location') }}</dt>
+        <dd>{{ ticket.location.name }} ({{ ticket.location.code }})</dd>
+        <dt>{{ t('list.priority') }}</dt>
+        <dd>{{ label('priority', ticket.priority.code, ticket.priority.name) }}</dd>
+        <dt>{{ t('list.type') }}</dt>
+        <dd>{{ label('type', ticket.maintenance_type.code, ticket.maintenance_type.name) }}</dd>
+        <dt>{{ t('detail.requester') }}</dt>
+        <dd>{{ ticket.requester.full_name() }}</dd>
+        <dt>{{ t('list.technician') }}</dt>
+        <dd>{{ ticket.assigned_technician.full_name() if ticket.assigned_technician else t('unassigned') }}</dd>
+        <dt>{{ t('report.reported') }}</dt>
+        <dd>{{ ticket.reported_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+    </dl>
+</section>
+
+<section class="panel">
+    <h2>{{ t('detail.records') }}</h2>
+    {% for rec in records %}
+    <article class="record">
+        <header class="record-head">
+            <strong>{{ rec.attended_at.strftime('%Y-%m-%d %H:%M') }}</strong>
+            · {{ rec.technician.full_name() }}
+            · <span class="badge badge-{{ rec.service_status.code }}">{{ label('status', rec.service_status.code, rec.service_status.name) }}</span>
+        </header>
+        <p>{{ rec.work_performed }}</p>
+        {% if rec.notes %}<p class="muted">{{ rec.notes }}</p>{% endif %}
+        {% if rec.materials %}
+        <h3>{{ t('maintenance.materials') }}</h3>
+        <ul class="materials">
+            {% for m in rec.materials %}
+            <li>{{ m.name }} — {{ '%g'|format(m.quantity) }} {{ m.unit }}{% if m.notes %} ({{ m.notes }}){% endif %}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if rec.photos %}
+        <h3>{{ t('detail.photos') }}</h3>
+        <div class="evidence-grid">
+            {% for photo in rec.photos %}
+            <figure class="evidence">
+                <a href="{{ evidence_url(photo) }}" target="_blank" rel="noopener">
+                    <img src="{{ evidence_url(photo) }}" alt="{{ photo.description or photo.file_name }}" loading="lazy"/>
+                </a>
+                <figcaption>{{ photo.description or photo.file_name }}</figcaption>
+            </figure>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </article>
+    {% else %}
+    <p class="muted">{{ t('detail.noRecords') }}</p>
+    {% endfor %}
+</section>
+{% endblock %}

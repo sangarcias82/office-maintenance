@@ -8,26 +8,38 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
     <link rel="stylesheet" href="/static/css/app.css"/>
+    {# Front file: fronts/<slug>/templates/partials/theme.css, else the _default one. #}
+    <style id="front-theme">
+{% include "partials/theme.css" %}
+    </style>
+    {% if theme_vars %}
+    {# Generic company tokens (company.theme_tokens), hex-validated on save and on render. #}
+    <style id="company-tokens">:root { {% for name, value in theme_vars %}--{{ name }}: {{ value }}; {% endfor %}}</style>
+    {% endif %}
     {% block head %}{% endblock %}
 </head>
-<body>
+{# Stable per-company hook: data-company = signed-in company slug ("" when anonymous),
+   data-theme = front that served partials/theme.css ("_default" unless the company has one). #}
+<body class="theme-{{ theme_front }}" data-company="{{ company_slug }}" data-theme="{{ theme_front }}">
 <div class="shell">
     <header class="topbar">
-        <div class="brand">
-            <div class="brand-kicker">{{ t('brand.kicker') }}</div>
-            <h1 class="brand-title">{{ t('brand.title') }}</h1>
-        </div>
+        {% include "partials/brand.html" %}
         <div class="session-card">
             <div class="lang-switch">
                 <a href="/lang/en?next={{ current_path|urlencode }}" class="{{ 'active' if lang == 'en' else '' }}">EN</a>
                 <a href="/lang/es?next={{ current_path|urlencode }}" class="{{ 'active' if lang == 'es' else '' }}">ES</a>
             </div>
             {% if current_user %}
+            <div class="session-company" data-company="{{ current_user.company.slug }}">
+                <span class="session-company-label">{{ t('session.company') }}</span>
+                <strong class="session-company-name">{{ current_user.company.display_name }}</strong>
+            </div>
             <div class="session-meta">
                 {{ current_user.full_name() }} · {{ label('role', current_user.role_code, current_user.role.name) }} · {{ current_user.employee_number }}
             </div>
-            <div class="access-chip">{{ current_user.access_summary() }}</div>
+            <div class="access-chip">{{ label('access', current_user.role_code, current_user.role_code) }}</div>
             <form action="/logout" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                 <button class="btn" type="submit">{{ t('nav.logout') }}</button>
             </form>
             {% endif %}

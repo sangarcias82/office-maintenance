@@ -1,0 +1,10 @@
+# Used by `pytest --cov=app` (and ../for_testing). The run fails below 90%.
+[run]
+source = app
+omit =
+    */__pycache__/*
+
+[report]
+fail_under = 90
+show_missing = true
+skip_covered = false

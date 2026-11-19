@@ -5,6 +5,7 @@
     <p class="lede">{{ t('maintenance.lede') }}</p>
 
     <form action="/maintenance" method="post" enctype="multipart/form-data" class="form-grid" id="maintenance-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <label class="full">
             <span>{{ t('maintenance.request') }}</span>
             <select name="request_id" id="request-select" required data-reload-on-change="1">
@@ -86,6 +87,7 @@
 
         <div class="full">
             <h2>{{ t('maintenance.photo') }}</h2>
+            <p class="lede">{{ t('maintenance.photoHint') }}</p>
             <div class="form-grid">
                 <label class="full">
                     <span>{{ t('maintenance.attach') }}</span>

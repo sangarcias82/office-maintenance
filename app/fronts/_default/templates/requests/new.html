@@ -10,6 +10,7 @@
     </p>
 
     <form action="/requests" method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <label>
             <span>{{ t('request.location') }}</span>
             <select name="location_id" required>

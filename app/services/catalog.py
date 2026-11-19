@@ -7,8 +7,9 @@ from app.exceptions import BusinessError
 from app.models import Location, MaintenanceType, Priority, RequestStatus, Role
 
 
-def list_locations(db: Session, *, active_only: bool = True) -> list[Location]:
-    stmt = select(Location).order_by(Location.name)
+def list_locations(db: Session, *, company_id: int, active_only: bool = True) -> list[Location]:
+    """Locations of one company (catalogs like priority/status stay global)."""
+    stmt = select(Location).where(Location.company_id == company_id).order_by(Location.name)
     if active_only:
         stmt = stmt.where(Location.active.is_(True))
     return list(db.scalars(stmt))

@@ -1,0 +1,80 @@
+/* Harbor Yard front theme hook. Loaded only for Harbor Yard users (partials/theme.css
+   resolves to this file first; everyone else gets the empty _default one).
+   1. Palette: overrides the design tokens defined in static/css/app.css.
+   2. Treatment: brand title as a container-label plate, navy nav bar, yard-line pattern.
+   A company's optional theme_tokens (database) are emitted after this and win. */
+:root {
+  --accent: #1f5f8b;
+  --accent-ink: #f3f8fc;
+  --accent-2: #f2b705;
+  --bg: #e9eff4;
+  --bg-deep: #cfdbe6;
+  --bg-glow: #1f5f8b24;
+  --panel: #fbfdff;
+  --ink: #14212b;
+  --muted: #52667a;
+  --line: #bccbd8;
+}
+
+body[data-theme="harbor-yard"] {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 46px, #1f5f8b0d 46px 48px),
+    radial-gradient(circle at top left, var(--bg-glow), transparent 28%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
+}
+
+body[data-theme="harbor-yard"] .nav {
+  background: var(--accent);
+  padding: 0.45rem;
+  border-radius: 999px;
+}
+
+body[data-theme="harbor-yard"] .nav a {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+
+body[data-theme="harbor-yard"] .nav a.active {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: var(--ink);
+}
+
+.brand-harbor {
+  gap: 0.45rem;
+}
+
+.brand-harbor .brand-kicker {
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+}
+
+.brand-harbor .brand-title {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.22em 0.55em 0.16em 0.5em;
+  border-left: 0.45em solid var(--accent-2);
+  border-radius: 6px;
+  font-size: clamp(1.6rem, 3.2vw, 2.5rem);
+  letter-spacing: 0.14em;
+  box-shadow: 0 10px 24px rgba(20, 33, 43, 0.18);
+}
+
+.brand-harbor .brand-title::after {
+  content: "";
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-left: 0.45em;
+  border: 0.12em solid var(--accent-2);
+  border-radius: 50%;
+  vertical-align: 0.12em;
+}
+
+.session-company-name {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}

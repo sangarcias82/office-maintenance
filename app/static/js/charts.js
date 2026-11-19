@@ -4,7 +4,19 @@
 (function () {
   "use strict";
 
-  var PALETTE = ["#c45c26", "#2f5f8a", "#2f6b4f", "#8a6d3b", "#6b4f7a", "#3d5a4c"];
+  // Colours follow the company theme (CSS variables from app.css / company tokens).
+  function cssVar(name, fallback) {
+    var value = getComputedStyle(document.documentElement).getPropertyValue(name);
+    return (value && value.trim()) || fallback;
+  }
+
+  var PALETTE = [
+    cssVar("--accent", "#c45c26"),
+    cssVar("--accent-2", "#2f5f8a"),
+    "#2f6b4f", "#8a6d3b", "#6b4f7a", "#3d5a4c"
+  ];
+  var PANEL = cssVar("--panel", "#fffdf8");
+  var MUTED = cssVar("--muted", "#5d6a63");
 
   function parseData(canvas) {
     var labels = [];
@@ -35,7 +47,7 @@
       var y = h - pad - bh;
       ctx.fillStyle = PALETTE[i % PALETTE.length];
       ctx.fillRect(x, y, barW * 0.7, bh);
-      ctx.fillStyle = "#5d6a63";
+      ctx.fillStyle = MUTED;
       ctx.fillText(String(v), x + barW * 0.35, y - 6);
       ctx.fillText(String(label).slice(0, 12), x + barW * 0.35, h - 8);
     });
@@ -62,7 +74,7 @@
     });
     ctx.beginPath();
     ctx.arc(cx, cy, radius * 0.55, 0, Math.PI * 2);
-    ctx.fillStyle = "#fffdf8";
+    ctx.fillStyle = PANEL;
     ctx.fill();
 
     ctx.font = "12px IBM Plex Sans, sans-serif";
@@ -72,7 +84,7 @@
       var y = Math.max(8, legendY) + i * 14;
       ctx.fillStyle = PALETTE[i % PALETTE.length];
       ctx.fillRect(12, y, 10, 10);
-      ctx.fillStyle = "#5d6a63";
+      ctx.fillStyle = MUTED;
       ctx.fillText(label + " (" + (values[i] || 0) + ")", 28, y + 9);
     });
   }
